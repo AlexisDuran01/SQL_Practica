@@ -43,7 +43,8 @@ SHOW GLOBAL VARIABLES LIKE 'local_infile';
 -- =============================================
 -- Importa datos del archivo CAN_2021.csv ubicado en el directorio permitido
 -- Delimitadores: Campos con ';', Líneas con '\n', Ignora la primera línea (encabezados)
-LOAD DATA LOCAL INFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/CAN_2021.csv'
+-- Linux /home/alexisduran/Downloads/SQL_Practica/CAN_2021.csv
+LOAD DATA LOCAL INFILE '/home/alexisduran/Downloads/SQL_Practica/CAN_2021.csv'
 INTO TABLE Disposicion
 FIELDS TERMINATED BY ';'
 LINES TERMINATED BY '\n'
@@ -116,11 +117,14 @@ CREATE TABLE Cliente (
 );
 
 -- Importa datos desde CLIENTE.csv (codificación latina para caracteres especiales)
-LOAD DATA LOCAL INFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/CLIENTE.csv'
+-- Linux /home/alexisduran/Downloads/SQL_Practica/CLIENTE.csv
+LOAD DATA LOCAL INFILE '/home/alexisduran/Downloads/SQL_Practica/CLIENTE.csv'
 INTO TABLE Cliente
 CHARACTER SET latin1
 FIELDS TERMINATED BY ','
 IGNORE 1 LINES;
+
+SELECT * FROM Cliente;
 
 -- 8. CARGA DE TABLA DE GRUPOS
 -- =============================================
@@ -133,7 +137,8 @@ CREATE TABLE Grupo (
 );
 
 -- Importa datos desde GRUPOS.csv
-LOAD DATA LOCAL INFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/GRUPOS.csv'
+-- Linux /home/alexisduran/Downloads/SQL_Practica/GRUPOS.csv
+LOAD DATA LOCAL INFILE '/home/alexisduran/Downloads/SQL_Practica/GRUPOS.csv'
 INTO TABLE Grupo
 CHARACTER SET latin1
 FIELDS TERMINATED BY ';'
@@ -164,7 +169,7 @@ SELECT
     G.DE_NOMBRE AS Empresa,
     COUNT(*) AS TotalDisposiciones
 FROM Disposicion D
-INNER JOIN anticipo.grupo G ON D.CO_GRUPO = G.CO_GRUPO
+INNER JOIN anticipo.Grupo G ON D.CO_GRUPO = G.CO_GRUPO
 GROUP BY G.CO_GRUPO, G.DE_NOMBRE
 ORDER BY TotalDisposiciones DESC
 LIMIT 1;
@@ -291,7 +296,7 @@ WHERE numero = 1;
 -- =============================================
 
 -- Agregar columna de comisión
-ALTER TABLE disposicion ADD COLUMN Comision DECIMAL(15,2);
+ALTER TABLE Disposicion ADD COLUMN Comision DECIMAL(15,2);
 
 -- Actualizar comisiones según fecha (antes/después del 15-mayo-2021)
 -- Actualizar comisiones según fecha (antes/después del 15-mayo-2021)
@@ -322,11 +327,13 @@ FROM (
             PARTITION BY MONTH(FE_ALTA_DEP)  -- Divide los datos en grupos por mes
             ORDER BY SUM(Disposicion.Comision) DESC  -- Ordena las empresas por comisión total descendente dentro de cada mes
         ) AS Rango  -- Asigna un número de rango a cada empresa dentro de su mes
-    FROM disposicion
-    INNER JOIN Grupo G ON disposicion.CO_GRUPO = G.CO_GRUPO  -- Une con la tabla Grupo para obtener el nombre de la empresa
+    FROM Disposicion
+    INNER JOIN Grupo G ON Disposicion.CO_GRUPO = G.CO_GRUPO  -- Une con la tabla Grupo para obtener el nombre de la empresa
     GROUP BY G.DE_NOMBRE, MONTH(FE_ALTA_DEP), MONTHNAME(FE_ALTA_DEP)  -- Agrupa por empresa y mes
 ) AS consulta  -- Alias para la subconsulta
-WHERE Rango = 1 OR Rango = 2;  -- Filtra solo las dos primeras empresas por mes (las que tienen mayor comisión)
+WHERE Rango = 1 OR Rango = 2
+ORDER BY Numero_Mes, Rango
+;  -- Filtra solo las dos primeras empresas por mes (las que tienen mayor comisión)
 
 /*
 Explicación detallada:
@@ -347,30 +354,6 @@ Explicación detallada:
     */
 -- =============================================
 
-
-SELECT *
-FROM (
-  SELECT
-    Mes,
-    Nombre_Mes,
-    Disposiciones.CO_GRUPO,
-    G.DE_NOMBRE AS Empresa,
-    Comision,
-    ROW_NUMBER() over (PARTITION BY Mes ORDER BY Comision DESC,G.DE_NOMBRE) AS Lugar
-  FROM  (SELECT
-           MONTH(D.FE_ALTA_DEP)     AS Mes,
-           D.CO_GRUPO,
-           MONTHNAME(D.FE_ALTA_DEP) AS Nombre_Mes,
-           sum(D.Comision)          as Comision
-        FROM Disposicion D
-        group by MONTH(FE_ALTA_DEP), CO_GRUPO, Nombre_Mes) as Disposiciones
-  LEFT JOIN Grupo AS G
-  ON Disposiciones.CO_GRUPO = G.CO_GRUPO
-) AS subconsulta
-WHERE Lugar <= 5; -- Por ejemplo, para obtener los primeros 5 lugares
-
-SELECT COUNT(DISTINCT CO_GRUPO) FROM Disposicion;
-
 -- =============================================
 /*
     Tabla cliente agregar campo ESTATUS de tipo VARCHAR (15),
@@ -382,15 +365,11 @@ SELECT COUNT(DISTINCT CO_GRUPO) FROM Disposicion;
 -- =============================================
 
 -- Agrega una nueva columna llamada ESTATUS a la tabla Cliente
-ALTER TABLE cliente
+ALTER TABLE Cliente
 ADD ESTATUS VARCHAR(15);
 
 -- Muestra todos los registros de la tabla Cliente para verificar la nueva columna
-SELECT * FROM cliente;
-
--- Muestra todos los registros de la tabla Disposicion para referencia
-SELECT * FROM Disposicion;
-
+SELECT * FROM Cliente;
 
 
 -- Actualiza el campo ESTATUS en la tabla Cliente basado en las disposiciones y castigos
@@ -444,5 +423,106 @@ LEFT JOIN Disposicion D ON c.ID = D.IdPersona
 GROUP BY c.ESTATUS
 ORDER BY Cantidad_Cliente DESC ;
 
+SELECT COUNT(IdPersona) FROM Disposicion;
+SELECT COUNT(Id) FROM Cliente;
+SELECT COUNT(CO_GRUPO) FROM Grupo;
 
+/* Se creo un indice en la columna IdPersona de la tabla Disposicion, ya que la consulta tardaba 35 segundos en promedio
+y ahora tarda menos de un 1 segundo
 
+ Solo para Linux
+CREATE INDEX idx_disposicion_idpersona ON Disposicion (IdPersona)  */
+
+CREATE INDEX idx_disposicion_idpersona ON Disposicion (IdPersona);
+
+SELECT * FROM Cliente
+WHERE CIUDAD LIKE 'LEON%';
+
+-- =============================================
+/*
+Indice: Es un mecanismo que organiza los datos de forma logica, osea que no se ve directamente en los registros
+
+corroborar el impacto de la base de datos el uso de los indices, osea como medir el impacto de los indices en la base de datos
+
+Cuales la diferencia entre las llaves primarias o foraneas entre los indices
+
+Cual es la problematica de tener demasiados indices
+
+Eliminar indices que no se le conoce su nombre
+
+Saber para el dashboard realizar ciertas consultas
+Cual es la galleta mas vendida
+Cual es la que mas conviene mas vender
+Cuanto me cuesta una galleta
+*/
+-- =============================================
+
+-- Apellido mas comun
+SELECT * FROM Cliente
+WHERE APE_PATERNO = 'Lopez'; -- 22 ms  10 ms
+
+SELECT * FROM Cliente
+WHERE APE_PATERNO = 'DE MARIA Y CAMPOS'; -- 37 ms 5 ms
+
+SELECT * FROM Cliente
+WHERE NOMBRE LIKE '%JUAN%' ;-- 17 MS 24ms
+
+SELECT * FROM Cliente
+WHERE NOMBRE ='JUAN'; -- 18ms 13ms
+
+SELECT * FROM Cliente
+WHERE NOMBRE ='MARIBEL' AND APE_PATERNO='PEREZ'; -- 34 ms
+
+SELECT * FROM Cliente
+WHERE APE_PATERNO='RAMIREZ' AND APE_MATERNO='GONZALEZ'; -- 32
+
+SELECT * FROM Cliente
+WHERE CIUDAD='LEON'; -- 3 ms
+
+SELECT * FROM Cliente
+WHERE CIUDAD LIKE '%LEON%'; -- 55 ms
+
+SELECT * FROM Cliente
+WHERE APE_PATERNO='JUAREZ'
+AND CIUDAD='PUEBLA' ;-- 35 ms
+
+SELECT * FROM Cliente; -- 9 ms
+
+SELECT DISTINCT CIUDAD
+FROM  Cliente
+ORDER BY CIUDAD;
+
+ALTER TABLE Cliente ADD INDEX (APE_PATERNO);
+ALTER TABLE Cliente ADD INDEX (NOMBRE,APE_PATERNO);
+SELECT * FROM Cliente;
+
+-- 1) Indice de llave primaria ... ADD Primary Key
+-- 2) Indices Ordinarios (Ape_paterno)
+-- 3) Indices compuestos (Nombre, Ape_paterno)
+-- 4) Indices parciales (Ciudad(5),Ape_paterno(5)) cuando buscamos por los primeros 5 letras
+-- 5) indices unicos ADD unique <> ()
+-- 6) Indice texto completo ADD FULLTEXT indApp()
+
+ALTER TABLE Cliente ADD INDEX cliente_APE_PATERNO(APE_PATERNO);
+
+SELECT 'Apellido_Paterno', 'Cantidad_personas', 'Pers c/disp'
+UNION ALL
+SELECT
+    c.APE_PATERNO,
+    COUNT(*) AS total_clientes,
+    IF(COALESCE(d.Dispo, 0) = 0, 0, 1) AS tiene_disposicion
+FROM Cliente AS c
+LEFT JOIN
+    (SELECT IdPersona, COUNT(1) AS Dispo
+     FROM Disposicion
+     GROUP BY IdPersona
+    ) AS d
+ON c.ID = d.IdPersona
+GROUP BY c.APE_PATERNO
+INTO OUTFILE '/var/lib/mysql/prueba.csv'
+FIELDS TERMINATED BY ','
+OPTIONALLY ENCLOSED BY '"'
+ESCAPED BY ''
+LINES TERMINATED BY '\n';
+
+SHOW VARIABLES LIKE 'datadir';
