@@ -44,7 +44,7 @@ SHOW GLOBAL VARIABLES LIKE 'local_infile';
 -- Importa datos del archivo CAN_2021.csv ubicado en el directorio permitido
 -- Delimitadores: Campos con ';', Líneas con '\n', Ignora la primera línea (encabezados)
 -- Linux /home/alexisduran/Downloads/SQL_Practica/CAN_2021.csv
-LOAD DATA LOCAL INFILE '/home/alexisduran/Downloads/SQL_Practica/CAN_2021.csv'
+LOAD DATA LOCAL INFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/'
 INTO TABLE Disposicion
 FIELDS TERMINATED BY ';'
 LINES TERMINATED BY '\n'
@@ -131,19 +131,22 @@ SELECT * FROM Cliente;
 -- Estructura para información de grupos empresariales
 CREATE TABLE Grupo (
     CO_GRUPO VARCHAR(10),                 -- Código de grupo (clave primaria natural)
-    DE_ESTATUS VARCHAR(20) NOT NULL,      -- Estatus actual (Activo/Inactivo)
-    DE_NOMBRE VARCHAR(100) NOT NULL,      -- Nombre del grupo
+    DE_ESTATUS VARCHAR(20) NULL,      -- Estatus actual (Activo/Inactivo)
+    DE_NOMBRE VARCHAR(100) NULL,      -- Nombre del grupo
     DE_RFC VARCHAR(20)                    -- RFC con posibles espacios/formatos erróneos
 );
 
+
 -- Importa datos desde GRUPOS.csv
 -- Linux /home/alexisduran/Downloads/SQL_Practica/GRUPOS.csv
-LOAD DATA LOCAL INFILE '/home/alexisduran/Downloads/SQL_Practica/GRUPOS.csv'
+LOAD DATA LOCAL INFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/GRUPOS.csv'
 INTO TABLE Grupo
 CHARACTER SET latin1
 FIELDS TERMINATED BY ';'
 LINES TERMINATED BY '\n'
 IGNORE 1 LINES;
+
+
 
 -- 9. DEPURACIÓN DE RFC EN GRUPOS
 -- =============================================
@@ -328,12 +331,13 @@ FROM (
             ORDER BY SUM(Disposicion.Comision) DESC  -- Ordena las empresas por comisión total descendente dentro de cada mes
         ) AS Rango  -- Asigna un número de rango a cada empresa dentro de su mes
     FROM Disposicion
-    INNER JOIN Grupo G ON Disposicion.CO_GRUPO = G.CO_GRUPO  -- Une con la tabla Grupo para obtener el nombre de la empresa
+    left JOIN Grupo G ON Disposicion.CO_GRUPO = G.CO_GRUPO  -- Une con la tabla Grupo para obtener el nombre de la empresa
     GROUP BY G.DE_NOMBRE, MONTH(FE_ALTA_DEP), MONTHNAME(FE_ALTA_DEP)  -- Agrupa por empresa y mes
 ) AS consulta  -- Alias para la subconsulta
 WHERE Rango = 1 OR Rango = 2
-ORDER BY Numero_Mes, Rango
+ORDER BY Numero_Mes, Rango,Suma_Comision
 ;  -- Filtra solo las dos primeras empresas por mes (las que tienen mayor comisión)
+
 
 /*
 Explicación detallada:
@@ -363,6 +367,8 @@ Explicación detallada:
     ESTATUS: BLOQUEADO, Cuando haya tenido castigos
 */
 -- =============================================
+SELECT * FROM Grupo  ;
+
 
 -- Agrega una nueva columna llamada ESTATUS a la tabla Cliente
 ALTER TABLE Cliente
@@ -393,8 +399,6 @@ SET C.ESTATUS =
         -- Si no cumple ninguna de las condiciones anteriores, se marca como 'INACTIVO'
         WHEN (D.disposiciones = 0 AND D.cargo = 0) OR (D.disposiciones IS NULL AND D.cargo IS NULL) THEN 'INACTIVO'
         END;
-
-
 SELECT
         IdPersona,
         -- Verifica si el cliente tiene algún castigo (Monto_castigado > 0)
@@ -526,3 +530,91 @@ ESCAPED BY ''
 LINES TERMINATED BY '\n';
 
 SHOW VARIABLES LIKE 'datadir';
+
+SELECT * FROM disposicion;
+SELECT * FROM Grupo;
+SELECT * FROM Cliente;
+
+
+/*
+Examen
+*/
+
+SELECT c.APE_PATERNO as Apellido_Paterno,
+        Monto_castigado,
+        monto,
+       (d.Monto_castigado/d.monto)*100 AS Porcentaje_Perdida
+FROM Disposicion d
+INNER JOIN cliente c
+on d.IdPersona = c.ID
+WHERE Monto_castigado > 0
+ORDER BY Porcentaje_Perdida desc
+limit 1;
+
+SELECT
+     Apellido_Paterno,
+     Monto_total,
+     Monto_Castigado,
+    ((Monto_Castigado/Monto_total))*100 AS Porcentaja_perdida
+    FROM (SELECT c.APE_PATERNO as Apellido_Paterno,
+        SUM(COALESCE(monto, 0)) as Monto_total,
+        SUM(COALESCE(Monto_castigado, 0)) as Monto_Castigado
+FROM Disposicion d
+INNER JOIN cliente c
+on d.IdPersona = c.ID
+GROUP BY c.APE_PATERNO) AS consulta
+order by Porcentaja_perdida desc
+limit 1;
+
+
+
+/*
+ Genera una consulta donde se determine cual es el apellido (paterno) de las personas con mayor perdia porcentual.
+ Donde el porcentaje de perdida = Monto toal castigado / Monto total dispuesto
+ */
+
+/*
+Considera el estatus de las empresas y de los clientes con disposiciones, genera una consulta que permita el siguiente reporte
+*/
+
+
+
+
+SELECT
+    g.DE_ESTATUS as Estatus_Empresa,
+    row_number() over (partition by c.ESTATUS) as rango,
+    c.ESTATUS,
+    COUNT(DISTINCT g.CO_GRUPO) AS Numero_Empresa,
+    COUNT(DISTINCT c.ID) AS Numero_Cliente,
+    count(monto) AS Numero_Disposiciones,
+    SUM(COALESCE(D.monto,0)) AS Monto_Total
+FROM Cliente c
+INNER JOIN Disposicion D ON c.ID = D.IdPersona
+INNER JOIN grupo g on D.CO_GRUPO = g.CO_GRUPO
+GROUP BY c.ESTATUS, g.DE_ESTATUS
+order by Estatus_Empresa
+;
+
+
+CREATE TABLE Emisora (
+    Entidad VARCHAR(255),
+    RAZON_SOCIAL VARCHAR(255),
+    SP_LP_EN VARCHAR(255),
+    MD_LP_EN VARCHAR(255) ,
+    FT_LP_EN VARCHAR(255),
+    HR_LP_EN VARCHAR(255)
+);
+DROP TABLE Emisora;
+
+LOAD DATA LOCAL INFILE 'C:/ProgramData/MySQL/MySQL Server 8.0/Uploads/Emisoras.csv'
+INTO TABLE emisora
+CHARACTER SET latin1
+FIELDS TERMINATED BY ';'
+IGNORE 1 LINES;
+
+SELECT * FROM emisora;
+
+ALTER TABLE Emisora
+ADD COLUMN Tipo_Entidad VARCHAR(255) DEFAULT 'Otro';
+
+/**/
